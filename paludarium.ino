@@ -8,6 +8,7 @@
  * Version: 1.1
  * Date: 27.08.2022
  * Author: Leo Vaucher
+ * Todo: Allumer même si temps déjà passé
  *  
 ******************************************************************************/
 
@@ -69,16 +70,18 @@ int hours = 0;
 int minutes = 0;
 
 LAMP lamps[3];
+uint8_t lampNbr = 0;
 BUSE buse;
 uint8_t startBuse = 0;
 uint16_t buseCounter = 0;
 EXTRAS brume;
 EXTRAS bulles;
+uint8_t buseFlag = 0;
 
 // DEVICES
 uint8_t bt1 = 9; // Enter
 uint8_t bt2 = 16;// Next or +
-uint8_t lampPin[3] = {7,6,5};
+uint8_t lampPin[3] = {7,6,5}; //Bleu/Carré/Nuit
 uint8_t ledFond = 8; // à ajouter
 uint8_t brumePin = 4;
 uint8_t busePin = 3;
@@ -88,24 +91,24 @@ void setup() {
   Serial.begin(115200);
   RTC.begin();
 
-  pinMode(7, INPUT_PULLUP);
-  pinMode(16, INPUT_PULLUP);
+  pinMode(bt1, INPUT_PULLUP);
+  pinMode(bt2, INPUT_PULLUP);
 
-  pinMode(2, OUTPUT);
-  pinMode(3, OUTPUT);
-  pinMode(4, OUTPUT);
-  pinMode(5, OUTPUT);
-  pinMode(6, OUTPUT);
-  pinMode(7, OUTPUT);
-  pinMode(8, OUTPUT);
+  pinMode(bullesPin, OUTPUT);
+  pinMode(busePin, OUTPUT);
+  pinMode(brumePin, OUTPUT);
+  pinMode(lampPin[2], OUTPUT);
+  pinMode(lampPin[1], OUTPUT);
+  pinMode(lampPin[0], OUTPUT);
+  pinMode(ledFond, OUTPUT);
 
-  digitalWrite(2, 1);
-  digitalWrite(3, 1);
-  digitalWrite(4, 1);
-  digitalWrite(5, 1);
-  digitalWrite(6, 1);
-  digitalWrite(7, 1);
-  digitalWrite(8, 0);
+  digitalWrite(bullesPin, 1);
+  digitalWrite(busePin, 1);
+  digitalWrite(brumePin, 1);
+  digitalWrite(lampPin[2], 1);
+  digitalWrite(lampPin[1], 1);
+  digitalWrite(lampPin[0], 1);
+  digitalWrite(ledFond, 0);
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -172,6 +175,16 @@ void setup() {
   display.clearDisplay();
   display.display();
 
+  lamps[1].onH.hours = 8;
+  lamps[1].onH.minutes = 0;
+  lamps[1].offH.hours = 22;
+  lamps[1].offH.minutes = 0;
+  buse.tOn = 5;
+  buse.startH.hours = 8;
+  buse.startH.minutes = 0;
+  buse.stopH.hours = 21;
+  buse.stopH.minutes = 0;
+
 }
 
 uint8_t btval1 = 0;
@@ -192,9 +205,9 @@ void loop() {
   display.clearDisplay();
   hours = RTC.getHours();
   minutes = RTC.getMinutes();
-
+  
   manageTasks();
-
+  
   manageButtons();
 
   // Menu
@@ -229,8 +242,11 @@ void loop() {
       menu = 0;
       break;
   }
-
+  
   display.display();
+  if(millis()-actualTime > 100){
+    actualTime = millis();
+  }
   delay(100 - (millis()-actualTime));
   actualTime = millis();
 }
@@ -621,15 +637,22 @@ void manageTasks(){
     if(lamps[i].onH.hours == hours){
       if(lamps[i].onH.minutes == minutes){
         digitalWrite(lampPin[i], 0);
+        lampNbr |= 1<<i;
+        //Led fond
       }
     }
     if(lamps[i].offH.hours == hours){
       if(lamps[i].offH.minutes == minutes){
         digitalWrite(lampPin[i], 1);
+        lampNbr &= ~(1<<i);
       }
     }
   }
-
+  if(lampNbr == 0){
+    digitalWrite(ledFond, 0);
+  } else{
+    digitalWrite(ledFond, 1);
+  }
   // Brume
   if(brume.nbr != 0){
     for(int i=0;i<brume.nbr;i++){
@@ -656,10 +679,14 @@ void manageTasks(){
 
   // Buse
   if(hours >= buse.startH.hours && hours <= buse.stopH.hours){
-    if(minutes == 0){
+    if(minutes == buse.startH.minutes && buseFlag == 0){
       startBuse = 1;
+      buseFlag = 1;
       digitalWrite(busePin, 0);
-    }if(startBuse){
+    } else if(minutes == buse.startH.minutes+1){
+      buseFlag = 0;
+    }
+    if(startBuse){
       if(buseCounter == buse.tOn*10){
         digitalWrite(busePin, 1);
         buseCounter = 0;     
@@ -676,18 +703,21 @@ void manageTasks(){
       if(bulles.times[i].hours == hours){
         if(bulles.times[i].minutes == minutes){
           digitalWrite(bullesPin, 0);
+          digitalWrite(ledFond, 1);
         }
       }
       if(bulles.times[i].minutes + bulles.tOn >= 60){
         if((bulles.times[i].hours+1) == hours){
           if(((bulles.times[i].minutes + bulles.tOn)-60) == minutes){
             digitalWrite(bullesPin, 1);
+            digitalWrite(ledFond, 0);
           }
         }
       } else{
         if(bulles.times[i].hours == hours){
           if((bulles.times[i].minutes+bulles.tOn) == minutes){
             digitalWrite(bullesPin, 1);
+            digitalWrite(ledFond, 0);
           }
         }
       }
